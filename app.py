@@ -5,11 +5,13 @@ FastAPI application with intelligent query routing using the orchestrator.
 Routes user questions to appropriate search methods based on query analysis.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import uvicorn
 import os
+import time
+import asyncio
 
 
 # Initialize tracing first
@@ -94,7 +96,7 @@ async def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     """
-    Enhanced chat endpoint with intelligent query routing.
+    Enhanced chat endpoint with intelligent query routing and session tracking.
     
     Analyzes the user's question and routes it to the most appropriate search method:
     - Basic Keyword Search: For structured queries with specific filters
@@ -103,16 +105,25 @@ async def chat_endpoint(request: ChatRequest):
     - Clarification: When the query needs more context
     
     Args:
-        request: ChatRequest containing the user's question
+        request: ChatRequest containing the user's question and optional thread_id
         
     Returns:
         ChatResponse with routing information and appropriate search results
     """
+    session_id = None
     try:
         if not request.question.strip():
             raise HTTPException(status_code=400, detail="Question cannot be empty")
         
         print(f"📝 Received question: {request.question}")
+        
+        # Track session if thread_id is provided
+        if request.thread_id:
+            session_id = f"thread_{request.thread_id}"
+            if session_id in active_sessions:
+                active_sessions[session_id]["thread_id"] = request.thread_id
+                active_sessions[session_id]["last_activity"] = time.time()
+                print(f"🔗 Tracking session: {session_id}")
         
         # Use the orchestrator to process the query with intelligent routing
         result = await process_query_with_routing(request.question)
@@ -256,6 +267,147 @@ async def manual_cleanup():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cleanup error: {str(e)}")
+
+@app.post("/admin/terminate-session/{session_id}")
+async def terminate_session_endpoint(session_id: str):
+    """
+    Manually terminate a specific user session and clean up its resources.
+    
+    Args:
+        session_id: The session ID to terminate
+        
+    Returns:
+        Success message or error
+    """
+    try:
+        if session_id in active_sessions:
+            await cleanup_user_session(session_id)
+            return {"message": f"Session {session_id} terminated successfully"}
+        else:
+            return {"message": f"Session {session_id} not found or already terminated"}
+    except Exception as e:
+        print(f"❌ Error terminating session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to terminate session: {str(e)}")
+
+@app.get("/admin/active-sessions")
+async def get_active_sessions():
+    """
+    Get information about all currently active sessions.
+    
+    Returns:
+        Dict of active sessions with their information
+    """
+    try:
+        current_time = time.time()
+        session_info = {}
+        
+        for session_id, info in active_sessions.items():
+            session_info[session_id] = {
+                "start_time": info["start_time"],
+                "last_activity": info["last_activity"],
+                "duration_seconds": current_time - info["start_time"],
+                "inactive_seconds": current_time - info["last_activity"],
+                "thread_id": info.get("thread_id"),
+                "status": "active" if current_time - info["last_activity"] < 1800 else "inactive"  # 30 min threshold
+            }
+        
+        return {
+            "total_sessions": len(active_sessions),
+            "sessions": session_info
+        }
+    except Exception as e:
+        print(f"❌ Error getting active sessions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get active sessions: {str(e)}")
+
+# Session management for tracking active user sessions
+active_sessions = {}  # Store active user sessions/threads
+
+@app.middleware("http")
+async def session_tracking_middleware(request, call_next):
+    """
+    Middleware to track user sessions and detect when they end.
+    """
+    # Generate or extract session ID (you can use various methods)
+    session_id = request.headers.get("X-Session-ID") or request.client.host
+    
+    # Track the session
+    active_sessions[session_id] = {
+        "start_time": time.time(),
+        "last_activity": time.time(),
+        "thread_id": None  # Will be set when agent threads are created
+    }
+    
+    try:
+        response = await call_next(request)
+        # Update last activity
+        if session_id in active_sessions:
+            active_sessions[session_id]["last_activity"] = time.time()
+        return response
+    except Exception as e:
+        # Session ended with error - cleanup
+        await cleanup_user_session(session_id)
+        raise
+    finally:
+        # Optional: cleanup inactive sessions periodically
+        await cleanup_inactive_sessions()
+
+async def cleanup_user_session(session_id: str):
+    """
+    Clean up resources for a specific user session.
+    """
+    if session_id in active_sessions:
+        session_info = active_sessions[session_id]
+        print(f"🧹 Cleaning up session: {session_id}")
+        
+        # Cleanup any agent threads associated with this session
+        if session_info.get("thread_id"):
+            try:
+                # Add thread cleanup logic here
+                print(f"🗑️ Cleaning up thread: {session_info['thread_id']}")
+            except Exception as e:
+                print(f"⚠️ Error cleaning up thread: {e}")
+        
+        # Remove from active sessions
+        del active_sessions[session_id]
+        print(f"✅ Session cleanup completed for: {session_id}")
+
+async def cleanup_inactive_sessions(timeout_minutes: int = 30):
+    """
+    Clean up sessions that have been inactive for too long.
+    """
+    current_time = time.time()
+    timeout_seconds = timeout_minutes * 60
+    
+    inactive_sessions = [
+        session_id for session_id, info in active_sessions.items()
+        if current_time - info["last_activity"] > timeout_seconds
+    ]
+    
+    for session_id in inactive_sessions:
+        print(f"⏰ Session {session_id} timed out, cleaning up...")
+        await cleanup_user_session(session_id)
+
+# Background task for periodic session cleanup
+async def periodic_session_cleanup():
+    """
+    Background task that runs periodically to clean up inactive sessions.
+    """
+    while True:
+        try:
+            await cleanup_inactive_sessions(timeout_minutes=30)
+            await asyncio.sleep(300)  # Run every 5 minutes
+        except Exception as e:
+            print(f"❌ Error in periodic session cleanup: {e}")
+            await asyncio.sleep(60)  # Wait 1 minute before retrying
+
+# Start background task when app starts
+@app.on_event("startup")
+async def startup_event():
+    """
+    Start background tasks when the application starts.
+    """
+    print("🚀 Starting background session cleanup task...")
+    asyncio.create_task(periodic_session_cleanup())
 
 if __name__ == "__main__":
     print("🚀 Starting Legal Search Engine API with Intelligent Routing...")
