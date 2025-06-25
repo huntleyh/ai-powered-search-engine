@@ -1,0 +1,43 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug FastAPI App",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/app.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python": "${workspaceFolder}/venv/Scripts/python.exe",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "VIRTUAL_ENV": "${workspaceFolder}/venv",
+                "PATH": "${workspaceFolder}/venv/Scripts;${env:PATH}"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Debug with Uvicorn",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": [
+                "app:app",
+                "--reload",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "python": "${workspaceFolder}/venv/Scripts/python.exe",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "VIRTUAL_ENV": "${workspaceFolder}/venv",
+                "PATH": "${workspaceFolder}/venv/Scripts;${env:PATH}"
+            },
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

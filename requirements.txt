@@ -9,6 +9,6 @@ fastapi==0.115.6
 uvicorn==0.32.1
 pydantic==2.10.3
 langchain-openai==0.2.14
-azure-ai-projects==1.0.0b4
-azure-monitor-opentelemetry==1.7.0
-opentelemetry-instrumentation-openai-v2==0.54.2
+azure-ai-projects
+azure-monitor-opentelemetry
+opentelemetry-instrumentation-openai-v2

@@ -15,7 +15,7 @@ load_dotenv()
 conn_str_base = os.getenv('AZURE_SQL_CONNECTION_STRING')
 
 # Data file path
-FILE_NAME = 'SRCExport.xlsx' # can be CSV or XLSX (SRCExport.xlsx)
+FILE_NAME = 'dataset_full.xlsx' # can be CSV or XLSX (SRCExport.xlsx)
 table_name = 'EnforcementActionsFull'
 
 def get_azure_sql_token():

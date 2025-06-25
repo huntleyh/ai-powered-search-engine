@@ -52,7 +52,7 @@ aoai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
 conn_str_base = os.getenv('AZURE_SQL_CONNECTION_STRING')
 
 # Table configuration - update these as needed
-table_name = 'EnforcementActionsFull2'
+table_name = 'EnforcementActionsFull'
 
 # Initialize Azure clients
 search_index_client = SearchIndexClient(
